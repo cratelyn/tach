@@ -2,13 +2,16 @@
 
 #![allow(unused, reason = "prototyping")]
 
-use std::str::FromStr;
+use std::{
+    ops::{Add, Div, Not},
+    str::FromStr,
+};
 
 /// an entry in the `/proc/stat` kernel statistics table.
 ///
 /// see `proc_stat(5)` for more information.
 #[derive(Debug, Eq, PartialEq)]
-enum Entry {
+pub enum Entry {
     /// the amount of time that the system ("cpu" line) spent in various states.
     AllCpu {
         time: CpuTime,
@@ -38,11 +41,11 @@ enum Entry {
     SoftIrq,
 }
 
-#[derive(Debug, Eq, PartialEq)]
-struct CpuId(u8);
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CpuId(u8);
 
 #[derive(Debug, Eq, PartialEq)]
-struct CpuTime {
+pub struct CpuTime {
     /// time spent in user mode.
     user: UserHz,
     /// time spent in user mode with low priority (nice).
@@ -79,12 +82,13 @@ struct CpuTime {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct UserHz(u128);
+pub struct UserHz(u32);
 
 #[derive(Debug, Eq, PartialEq)]
-enum EntryParseError {
+pub enum EntryParseError {
     UnrecognizedEntry { kind: String },
     CpuIdParse(<u8 as FromStr>::Err),
+    UserHzParse(<UserHz as FromStr>::Err),
     CpuTime,
 }
 
@@ -110,6 +114,24 @@ impl FromStr for UserHz {
     }
 }
 
+impl Add for UserHz {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        let (Self(lhs), Self(rhs)) = (self, rhs);
+        UserHz(lhs + rhs)
+    }
+}
+
+impl Div for UserHz {
+    type Output = f64;
+    fn div(self, rhs: Self) -> Self::Output {
+        let to_float = |Self(hz)| -> f64 { hz.try_into().unwrap() };
+        let (lhs, rhs) = (to_float(self), to_float(rhs));
+
+        lhs / rhs
+    }
+}
+
 // === impl Entry ===
 
 impl FromStr for Entry {
@@ -117,7 +139,10 @@ impl FromStr for Entry {
     fn from_str(entry: &str) -> Result<Self, Self::Err> {
         use Entry::*;
 
-        let tokens = entry.split(' ').collect::<Vec<_>>();
+        let tokens = entry
+            .split(' ')
+            .filter(|t| t.is_empty().not())
+            .collect::<Vec<_>>();
         let [kind, tokens @ ..] = tokens.as_slice() else {
             todo!()
         };
@@ -132,7 +157,7 @@ impl FromStr for Entry {
             .map(std::ops::Deref::deref)
             .map(str::parse::<UserHz>)
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| EntryParseError::CpuTime)
+            .map_err(EntryParseError::UserHzParse)
             .and_then(CpuTime::try_from)?;
 
         Ok(if let Some(id) = id {
@@ -186,6 +211,42 @@ impl Entry {
 
 // === impl CpuTime ===
 
+impl CpuTime {
+    pub fn active(&self) -> UserHz {
+        let Self {
+            user,
+            nice,
+            system,
+            iowait,
+            irq,
+            softirq,
+            steal,
+            guest,
+            guest_nice,
+            idle: _, // do not count idle time...
+        } = *self;
+
+        user + nice + system + iowait + irq + softirq + steal + guest + guest_nice
+    }
+
+    pub fn total(&self) -> UserHz {
+        let Self {
+            user,
+            nice,
+            system,
+            iowait,
+            irq,
+            softirq,
+            steal,
+            guest,
+            guest_nice,
+            idle,
+        } = *self;
+
+        user + nice + system + iowait + irq + softirq + steal + guest + guest_nice + idle
+    }
+}
+
 impl TryFrom<Vec<UserHz>> for CpuTime {
     type Error = EntryParseError;
     fn try_from(times: Vec<UserHz>) -> Result<Self, Self::Error> {
@@ -225,6 +286,34 @@ impl From<[UserHz; 10]> for CpuTime {
     }
 }
 
+// === impl EntryParseError ===
+
+impl std::fmt::Display for EntryParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use EntryParseError::*;
+        match self {
+            UnrecognizedEntry { kind } => {
+                f.write_fmt(format_args!("unrecognized entry kind: {kind}"))
+            }
+            CpuIdParse(error) => f.write_fmt(format_args!("invalid cpu id: {error}")),
+            UserHzParse(error) => f.write_fmt(format_args!("invalid time value: {error}")),
+            CpuTime => f.write_str("some other error"), // XXX(kate)
+        }
+    }
+}
+
+impl std::error::Error for EntryParseError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        use EntryParseError::*;
+
+        match self {
+            CpuIdParse(error) => Some(error),
+            UserHzParse(error) => Some(error),
+            UnrecognizedEntry { kind: _ } | CpuTime => None,
+        }
+    }
+}
+
 // === unit tests ===
 
 #[cfg(test)]
@@ -237,12 +326,18 @@ mod entry_parse_tests {
 
     #[test]
     fn example_1() {
-        let _ = EXAMPLE_1.parse::<Entry>();
+        let _ = EXAMPLE_1.parse::<Entry>().unwrap();
     }
 
     #[test]
     fn example_2() {
-        let _ = EXAMPLE_2.parse::<Entry>();
+        let _ = EXAMPLE_2.parse::<Entry>().unwrap();
+    }
+
+    #[test]
+    fn example_3() {
+        const EXAMPLE_3: &str = "cpu  10132153 290696 3084719 46828483 16683 0 25195 0 175628 0";
+        let _ = EXAMPLE_3.parse::<Entry>().unwrap();
     }
 
     #[test]
