@@ -1,0 +1,9 @@
+[package]
+name                   = "tach"
+version                = "0.1.0"
+edition                = "2024"
+license                = "MIT"
+authors                = ["katelyn martin <me+cratelyn@katelyn.world>"]
+description            = "a compact cpu monitor"
+
+[dependencies]
