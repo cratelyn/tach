@@ -1,6 +1,6 @@
 use std::{
     fmt,
-    ops::{Add, Deref, Div, Not},
+    ops::{Add, Deref, Div, Not, Sub},
     str::FromStr,
 };
 
@@ -38,21 +38,21 @@ pub enum Entry {
     SoftIrq,
 }
 
-#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct CpuId(u8);
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CpuTime {
     /// time spent in user mode.
-    user: UserHz,
+    pub(crate) user: UserHz,
     /// time spent in user mode with low priority (nice).
-    nice: UserHz,
+    pub(crate) nice: UserHz,
     /// time spent in system mode.
-    system: UserHz,
+    pub(crate) system: UserHz,
     /// time spent in the idle task.
     ///
     /// this value should be USER_HZ times the second entry in the /proc/uptime pseudo-file.
-    idle: UserHz,
+    pub(crate) idle: UserHz,
     /// time waiting for i/o to complete.
     ///
     /// this value is not reliable, for the following reasons:
@@ -62,20 +62,20 @@ pub struct CpuTime {
     ///   *  on a multi-core cpu, the task waiting for i/o to complete is not running on any cpu,
     ///      so the iowait of each cpu is difficult to calculate.
     ///   *  the value in this field may decrease in certain conditions.
-    iowait: UserHz,
+    pub(crate) iowait: UserHz,
     /// time servicing interrupts.
-    irq: UserHz,
+    pub(crate) irq: UserHz,
     /// time servicing softirqs.
-    softirq: UserHz,
+    pub(crate) softirq: UserHz,
     /// stolen time, which is the time spent in other operating systems when running in a
     /// virtualized environment.
-    steal: UserHz,
+    pub(crate) steal: UserHz,
     /// time spent running a virtual cpu for guest operating systems under the control of the linux
     /// kernel.
-    guest: UserHz,
+    pub(crate) guest: UserHz,
     /// time spent running a niced guest (virtual cpu for guest operating systems under the
     /// control of the linux kernel).
-    guest_nice: UserHz,
+    pub(crate) guest_nice: UserHz,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -116,7 +116,15 @@ impl Add for UserHz {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         let (Self(lhs), Self(rhs)) = (self, rhs);
-        UserHz(lhs + rhs)
+        Self(lhs + rhs)
+    }
+}
+
+impl Sub for UserHz {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        let (Self(lhs), Self(rhs)) = (self, rhs);
+        Self(rhs - lhs)
     }
 }
 
@@ -279,6 +287,27 @@ impl From<[UserHz; 10]> for CpuTime {
             guest,
             guest_nice,
         }
+    }
+}
+
+impl Into<[UserHz; 10]> for CpuTime {
+    fn into(self) -> [UserHz; 10] {
+        let Self {
+            user,
+            nice,
+            system,
+            idle,
+            iowait,
+            irq,
+            softirq,
+            steal,
+            guest,
+            guest_nice,
+        } = self;
+
+        [
+            user, nice, system, idle, iowait, irq, softirq, steal, guest, guest_nice,
+        ]
     }
 }
 
