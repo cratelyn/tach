@@ -1,8 +1,33 @@
-use std::{
-    fmt,
-    ops::{Add, Deref, Div, Not, Sub},
-    str::FromStr,
+use {
+    crate::source::{Clock, StatsSource},
+    std::{
+        collections::BTreeMap,
+        fmt::{self, Display},
+        io::{self, BufRead, BufReader},
+        ops::{Deref, Not},
+        str::FromStr,
+        time::Instant,
+    },
 };
+
+pub use self::{
+    cpu_time::{CpuTime, Measurement},
+    user_hz::UserHz,
+};
+
+mod cpu_time;
+mod user_hz;
+
+#[cfg(test)]
+mod tests;
+
+/// a snapshot of the cpus' statistics at a moment in time.
+#[derive(Clone, Debug)]
+pub struct Snapshot {
+    pub system: CpuTime,
+    pub cpus: BTreeMap<CpuId, CpuTime>,
+    pub time: Instant,
+}
 
 /// an entry in the `/proc/stat` kernel statistics table.
 ///
@@ -41,46 +66,6 @@ pub enum Entry {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct CpuId(u8);
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CpuTime {
-    /// time spent in user mode.
-    pub(crate) user: UserHz,
-    /// time spent in user mode with low priority (nice).
-    pub(crate) nice: UserHz,
-    /// time spent in system mode.
-    pub(crate) system: UserHz,
-    /// time spent in the idle task.
-    ///
-    /// this value should be USER_HZ times the second entry in the /proc/uptime pseudo-file.
-    pub(crate) idle: UserHz,
-    /// time waiting for i/o to complete.
-    ///
-    /// this value is not reliable, for the following reasons:
-    ///   *  the cpu will not wait for i/o to complete; iowait is the time that a task is waiting
-    ///      for i/o to complete. when a cpu goes into idle state for outstanding task i/o,
-    ///      another task will be scheduled on this cpu.
-    ///   *  on a multi-core cpu, the task waiting for i/o to complete is not running on any cpu,
-    ///      so the iowait of each cpu is difficult to calculate.
-    ///   *  the value in this field may decrease in certain conditions.
-    pub(crate) iowait: UserHz,
-    /// time servicing interrupts.
-    pub(crate) irq: UserHz,
-    /// time servicing softirqs.
-    pub(crate) softirq: UserHz,
-    /// stolen time, which is the time spent in other operating systems when running in a
-    /// virtualized environment.
-    pub(crate) steal: UserHz,
-    /// time spent running a virtual cpu for guest operating systems under the control of the linux
-    /// kernel.
-    pub(crate) guest: UserHz,
-    /// time spent running a niced guest (virtual cpu for guest operating systems under the
-    /// control of the linux kernel).
-    pub(crate) guest_nice: UserHz,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct UserHz(u32);
-
 #[derive(Debug, Eq, PartialEq)]
 pub enum EntryParseError {
     UnrecognizedEntry { kind: String },
@@ -89,52 +74,57 @@ pub enum EntryParseError {
     CpuTime,
 }
 
+#[derive(Debug)]
+pub enum StatReadError {
+    Io(io::Error),
+    Entry(EntryParseError),
+}
+
 enum Either<'a> {
     Cpu(&'a str),
     Entry(Entry),
 }
 
-// === impl UserHz ===
+// === impl Snapshot ===
 
-impl UserHz {
-    /// the number of clock ticks in a second.
-    ///
-    /// this can be obtained via `getconf(1)` and `CLK_TCK`, or `sysconf(_SC_CLK_TCK)`. usually, this
-    /// is 100Hz, so it is hard-coded for now.
-    #[allow(unused, reason = "prototyping")]
-    const FREQ: u8 = 100;
-}
+impl Snapshot {
+    /// uses the given source to parse a snapshot of the cpu statistics.
+    pub(super) fn read(
+        stats: &impl StatsSource,
+        clock: &impl Clock,
+    ) -> Result<Snapshot, StatReadError> {
+        let time = clock.now();
+        let stats = {
+            let reader = stats.open().map_err(StatReadError::Io)?;
+            BufReader::new(reader).lines().collect::<Vec<_>>()
+        };
 
-impl FromStr for UserHz {
-    type Err = <u128 as FromStr>::Err;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse().map(Self)
-    }
-}
+        let mut entries = {
+            let len = stats.len();
+            Vec::<Entry>::with_capacity(len)
+        };
 
-impl Add for UserHz {
-    type Output = Self;
-    fn add(self, rhs: Self) -> Self::Output {
-        let (Self(lhs), Self(rhs)) = (self, rhs);
-        Self(lhs + rhs)
-    }
-}
+        for line in stats {
+            let line = line?;
+            let entry = line.parse::<Entry>()?;
+            entries.push(entry);
+        }
 
-impl Sub for UserHz {
-    type Output = Self;
-    fn sub(self, rhs: Self) -> Self::Output {
-        let (Self(lhs), Self(rhs)) = (self, rhs);
-        Self(rhs - lhs)
-    }
-}
+        let (system, cpus) =
+            entries
+                .into_iter()
+                .fold((None, BTreeMap::default()), |(mut sys, mut cpus), entry| {
+                    match entry {
+                        Entry::Cpu { id, time } => cpus.insert(id, time),
+                        Entry::AllCpu { time } => sys.replace(time),
+                        _ => None,
+                    };
+                    (sys, cpus)
+                });
 
-impl Div for UserHz {
-    type Output = f64;
-    fn div(self, rhs: Self) -> Self::Output {
-        let to_float = |Self(hz)| -> f64 { hz.try_into().unwrap() };
-        let (lhs, rhs) = (to_float(self), to_float(rhs));
+        let system = system.expect("system cpu statistic should exist");
 
-        lhs / rhs
+        Ok(Snapshot { system, cpus, time })
     }
 }
 
@@ -213,101 +203,35 @@ impl Entry {
     }
 }
 
-// === impl CpuTime ===
+// === impl StatReadError ===
 
-impl CpuTime {
-    pub fn active(&self) -> UserHz {
-        let Self {
-            user,
-            nice,
-            system,
-            iowait,
-            irq,
-            softirq,
-            steal,
-            guest,
-            guest_nice,
-            idle: _, // do not count idle time...
-        } = *self;
-
-        user + nice + system + iowait + irq + softirq + steal + guest + guest_nice
-    }
-
-    pub fn total(&self) -> UserHz {
-        let Self {
-            user,
-            nice,
-            system,
-            iowait,
-            irq,
-            softirq,
-            steal,
-            guest,
-            guest_nice,
-            idle,
-        } = *self;
-
-        user + nice + system + iowait + irq + softirq + steal + guest + guest_nice + idle
-    }
-}
-
-impl TryFrom<Vec<UserHz>> for CpuTime {
-    type Error = EntryParseError;
-    fn try_from(times: Vec<UserHz>) -> Result<Self, Self::Error> {
-        <_ as TryInto<[_; 10]>>::try_into(times)
-            .map(Self::from)
-            .map_err(|_| EntryParseError::CpuTime)
-    }
-}
-
-impl From<[UserHz; 10]> for CpuTime {
-    fn from(
-        [
-            user,
-            nice,
-            system,
-            idle,
-            iowait,
-            irq,
-            softirq,
-            steal,
-            guest,
-            guest_nice,
-        ]: [UserHz; 10],
-    ) -> Self {
-        Self {
-            user,
-            nice,
-            system,
-            idle,
-            iowait,
-            irq,
-            softirq,
-            steal,
-            guest,
-            guest_nice,
+impl std::error::Error for StatReadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(io) => Some(io),
+            Self::Entry(entry) => Some(entry),
         }
     }
 }
 
-impl Into<[UserHz; 10]> for CpuTime {
-    fn into(self) -> [UserHz; 10] {
-        let Self {
-            user,
-            nice,
-            system,
-            idle,
-            iowait,
-            irq,
-            softirq,
-            steal,
-            guest,
-            guest_nice,
-        } = self;
+impl Display for StatReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(io) => f.write_fmt(format_args!("{}", io)),
+            Self::Entry(entry) => f.write_fmt(format_args!("{}", entry)),
+        }
+    }
+}
 
-        [
-            user, nice, system, idle, iowait, irq, softirq, steal, guest, guest_nice,
-        ]
+impl From<EntryParseError> for StatReadError {
+    fn from(entry: EntryParseError) -> Self {
+        Self::Entry(entry)
+    }
+}
+
+impl From<io::Error> for StatReadError {
+    fn from(io: io::Error) -> Self {
+        Self::Io(io)
     }
 }
 
@@ -336,143 +260,5 @@ impl std::error::Error for EntryParseError {
             UserHzParse(error) => Some(error),
             UnrecognizedEntry { kind: _ } | CpuTime => None,
         }
-    }
-}
-
-// === unit tests ===
-
-#[cfg(test)]
-mod entry_parse_tests {
-    use super::*;
-
-    // two examples provided in the `proc_stat(5)` man page.
-    const EXAMPLE_1: &str = "cpu 10132153 290696 3084719 46828483 16683 0 25195 0 175628 0";
-    const EXAMPLE_2: &str = "cpu0 1393280 32966 572056 13343292 6130 0 17875 0 23933 0";
-
-    #[test]
-    fn example_1() {
-        let _ = EXAMPLE_1.parse::<Entry>().unwrap();
-    }
-
-    #[test]
-    fn example_2() {
-        let _ = EXAMPLE_2.parse::<Entry>().unwrap();
-    }
-
-    #[test]
-    fn example_3() {
-        const EXAMPLE_3: &str = "cpu  10132153 290696 3084719 46828483 16683 0 25195 0 175628 0";
-        let _ = EXAMPLE_3.parse::<Entry>().unwrap();
-    }
-
-    #[test]
-    fn bad_cpu_id() {
-        let err = "cpuA 0 0 0 0 0 0 0 0 0 0".parse::<Entry>().unwrap_err();
-        assert!(matches!(err, EntryParseError::CpuIdParse(_)));
-    }
-
-    #[test]
-    fn bad_entry_kind() {
-        const ENTRY: &str = "wrong 0 0 0 0 0 0 0 0 0 0";
-        let err = ENTRY.parse::<Entry>().unwrap_err();
-        match err {
-            EntryParseError::UnrecognizedEntry { kind } if kind == "wrong" => {}
-            _other => panic!(),
-        }
-    }
-
-    /// parse a cpu entry that is missing one of its times.
-    #[test]
-    fn missing_time() {
-        const ENTRY: &str = "cpu 10132153 290696 3084719 46828483 16683 0 25195 0 175628";
-        let err = ENTRY.parse::<Entry>().unwrap_err();
-        assert_eq!(err, EntryParseError::CpuTime);
-    }
-
-    /// parse a cpu entry that has one too many times..
-    #[test]
-    fn extra_time() {
-        const ENTRY: &str = "cpu 10132153 290696 3084719 46828483 16683 0 25195 0 175628 0 0";
-        let err = ENTRY.parse::<Entry>().unwrap_err();
-        assert_eq!(err, EntryParseError::CpuTime);
-    }
-
-    #[test]
-    fn page() {
-        let entry = "page 5741 1808".parse::<Entry>().unwrap();
-        assert_eq!(entry, Entry::Page);
-    }
-
-    #[test]
-    fn swap() {
-        let entry = "swap 1 0".parse::<Entry>().unwrap();
-        assert_eq!(entry, Entry::Swap);
-    }
-
-    #[test]
-    fn intr() {
-        let entry = "intr 1462898".parse::<Entry>().unwrap();
-        assert_eq!(entry, Entry::Intr);
-    }
-
-    #[test]
-    fn btime() {
-        let entry = "btime 769041601".parse::<Entry>().unwrap();
-        assert_eq!(entry, Entry::Btime);
-    }
-
-    #[test]
-    fn processes() {
-        let entry = "processes 86031".parse::<Entry>().unwrap();
-        assert_eq!(entry, Entry::Processes);
-    }
-
-    #[test]
-    fn procs_running() {
-        let entry = "procs_running 6".parse::<Entry>().unwrap();
-        assert_eq!(entry, Entry::ProcsRunning);
-    }
-
-    #[test]
-    fn procs_blocked() {
-        let entry = "procs_blocked 2".parse::<Entry>().unwrap();
-        assert_eq!(entry, Entry::ProcsBlocked);
-    }
-
-    #[test]
-    fn softirq() {
-        let entry =
-            "softirq 229245889 94 60001584 13619 5175704 2471304 28 51212741 59130143 0 51240672"
-                .parse::<Entry>()
-                .unwrap();
-        assert_eq!(entry, Entry::SoftIrq);
-    }
-}
-
-#[cfg(test)]
-mod parse_cpu_id_tests {
-    use super::*;
-
-    #[test]
-    fn all() {
-        assert_eq!(Entry::parse_cpu_id("cpu"), Ok(None));
-    }
-
-    #[test]
-    fn one() {
-        assert_eq!(Entry::parse_cpu_id("cpu1"), Ok(Some(CpuId(1))));
-    }
-
-    #[test]
-    fn two() {
-        assert_eq!(Entry::parse_cpu_id("cpu2"), Ok(Some(CpuId(2))));
-    }
-
-    #[test]
-    fn a() {
-        assert!(matches!(
-            Entry::parse_cpu_id("cpua"),
-            Err(EntryParseError::CpuIdParse(_))
-        ));
     }
 }
