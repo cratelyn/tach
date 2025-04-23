@@ -58,8 +58,10 @@ impl App {
             cpus,
         }: Recording,
     ) -> io::Result<()> {
+        const BORDER: char = '│';
+
         let meter_width = {
-            let columns = 130; // XXX(hardcoded for now)
+            let columns = 150; // XXX(hardcoded for now)
             let ncpus = cpus.len() - 1;
             let delims = ncpus - 1;
             let per_cpu = (columns - delims) / ncpus;
@@ -69,7 +71,7 @@ impl App {
         let stdout = std::io::stdout();
         let mut stdout = stdout.lock();
 
-        write!(&mut stdout, "|")?;
+        write!(&mut stdout, "{BORDER}")?;
         for (id, measurement) in cpus {
             Meter {
                 name: format!("{id:?}"),
@@ -77,8 +79,13 @@ impl App {
                 width: meter_width,
             }
             .draw(&mut stdout)?;
-            write!(&mut stdout, "|")?;
+            write!(&mut stdout, "{BORDER}")?;
         }
+        write!(&mut stdout, " ")?;
+
+        let percentage = system.percentage();
+        write!(&mut stdout, " {percentage}%")?;
+
         write!(&mut stdout, "\n")?;
 
         Ok(())
