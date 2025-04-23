@@ -120,16 +120,20 @@ impl Measurement {
 
     /// returns the percentage of active cpu time.
     pub fn percentage(&self) -> u8 {
+        self.normalized(100)
+    }
+
+    pub fn normalized(&self, n: usize) -> u8 {
         let active = self.active();
         let total = self.total();
 
-        // calculate a percentage.
-        let percent = (active / total) * 100.0;
-        assert!(percent >= 0.0);
-        assert!(percent <= 100.0);
+        // calculate the ratio of active time.
+        let norm = (active / total) * n as f64;
+        assert!(norm >= 0.0);
+        assert!(norm <= n as f64);
 
-        // round to the nearest percentage point.
-        let rounded: u8 = percent.round() as u8;
+        // round to the nearest digit.
+        let rounded: u8 = norm.round() as u8;
         assert!(rounded <= 100);
 
         rounded

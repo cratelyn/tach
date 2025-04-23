@@ -58,29 +58,28 @@ impl App {
             cpus,
         }: Recording,
     ) -> io::Result<()> {
-        let percentage = system.percentage();
+        let meter_width = {
+            let columns = 130; // XXX(hardcoded for now)
+            let ncpus = cpus.len() - 1;
+            let delims = ncpus - 1;
+            let per_cpu = (columns - delims) / ncpus;
+            per_cpu
+        };
 
         let stdout = std::io::stdout();
         let mut stdout = stdout.lock();
 
-        Meter {
-            name: "system".to_owned(),
-            value: percentage as usize,
-            width: 100,
-        }
-        .draw(&mut stdout)?;
-        write!(&mut stdout, "\n")?;
-
+        write!(&mut stdout, "|")?;
         for (id, measurement) in cpus {
-            let percentage = measurement.percentage();
             Meter {
                 name: format!("{id:?}"),
-                value: percentage as usize,
-                width: 100,
+                value: measurement.active() / measurement.total(),
+                width: meter_width,
             }
             .draw(&mut stdout)?;
-            write!(&mut stdout, "\n")?;
+            write!(&mut stdout, "|")?;
         }
+        write!(&mut stdout, "\n")?;
 
         Ok(())
     }
