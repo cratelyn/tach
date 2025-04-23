@@ -71,20 +71,39 @@ impl App {
         let stdout = std::io::stdout();
         let mut stdout = stdout.lock();
 
+        write!(&mut stdout, "  ")?;
+
+        write!(&mut stdout, "\x1B[90m")?;
         write!(&mut stdout, "{BORDER}")?;
-        for (id, measurement) in cpus {
+        write!(&mut stdout, "\x1B[0m")?;
+
+        for (_, measurement) in cpus {
+            // set the foreground color via `ESC[{..}m`.
+            // red: 31
+            // yellow: 33
+            // green: 32
+            // grey: 90
+            write!(&mut stdout, "\x1B[31m")?;
+
             Meter {
-                name: format!("{id:?}"),
                 value: measurement.active() / measurement.total(),
                 width: meter_width,
             }
             .draw(&mut stdout)?;
+
+            // reset the foreground color via `ESC[{..}m`.
+            write!(&mut stdout, "\x1B[0m")?;
+
+            write!(&mut stdout, "\x1B[90m")?;
             write!(&mut stdout, "{BORDER}")?;
+            write!(&mut stdout, "\x1B[0m")?;
         }
         write!(&mut stdout, " ")?;
 
+        write!(&mut stdout, "\x1B[32m")?;
         let percentage = system.percentage();
-        write!(&mut stdout, " {percentage}%")?;
+        write!(&mut stdout, " {percentage:02}%")?;
+        write!(&mut stdout, "\x1B[0m")?;
 
         write!(&mut stdout, "\n")?;
 

@@ -3,7 +3,7 @@ use {
         source::{Clock, ProcStatFile, StatsSource, SystemClock},
         stat::{CpuId, Measurement, Snapshot, StatReadError},
     },
-    std::{cell::RefCell, collections::BTreeMap, time::Instant},
+    std::{collections::BTreeMap, time::Instant},
 };
 
 /// observes kernel statistics.
@@ -32,8 +32,10 @@ enum Inner<C, S> {
 #[derive(Clone, Debug)]
 pub struct Recording {
     /// when the recording began.
+    #[allow(dead_code)]
     pub start: Instant,
     /// when the recording ended.
+    #[allow(dead_code)]
     pub end: Instant,
     /// how the system cpus spent their time, in aggregate.
     pub system: Measurement,

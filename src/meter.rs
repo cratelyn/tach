@@ -1,13 +1,9 @@
-use {
-    crate::stat::UserHz,
-    std::{
-        fmt::Display,
-        io::{self, Write},
-    },
+use std::{
+    fmt::Display,
+    io::{self, Write},
 };
 
 pub struct Meter {
-    pub name: String,
     pub value: f64,
     pub width: usize,
 }
@@ -37,7 +33,10 @@ enum Cell {
 impl Meter {
     // XXX: a simple, hacky meter.
     pub fn draw(&self, writer: &mut impl Write) -> io::Result<()> {
-        let reading = placeholder(self.value, self.width);
+        let Reading { cells } = placeholder(self.value, self.width);
+        let reading = Reading {
+            cells: middle_fill(cells.into_iter()),
+        };
         writer.write(reading.to_string().as_bytes())?;
         Ok(())
     }
@@ -66,6 +65,23 @@ fn placeholder(percentage: f64, width: usize) -> Reading {
         .collect();
 
     Reading { cells }
+}
+
+fn middle_fill(mut cells: impl Iterator<Item = Cell>) -> Vec<Cell> {
+    use std::collections::VecDeque;
+    let mut new = VecDeque::with_capacity(cells.size_hint().0);
+    let mut flip = false;
+
+    while let Some(next) = cells.next() {
+        if flip {
+            new.push_front(next);
+        } else {
+            new.push_back(next);
+        }
+        flip = !flip;
+    }
+
+    new.into()
 }
 
 impl Display for Reading {
