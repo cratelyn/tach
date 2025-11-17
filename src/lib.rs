@@ -1,10 +1,7 @@
 //! a compact cpu monitor.
 
 use {
-    self::{
-        meter::Meter,
-        sentinel::{Recording, Sentinel},
-    },
+    self::sentinel::{Recording, Sentinel},
     std::{
         io::{self, Write},
         time::Duration,
@@ -28,10 +25,13 @@ mod stat;
 /// the tui window.
 mod window;
 
+/// an instance of the `tach` application.
 pub struct App {
+    /// the sentinel, observing kernel statistics.
     sentinel: Sentinel,
 }
 
+/// A boxed error.
 type Error = Box<dyn std::error::Error>;
 
 /// === impl App ===
@@ -47,76 +47,9 @@ impl App {
     /// runs the application.
     pub fn run(self) -> Result<(), Error> {
         self.tui().map_err(Into::into)
-
-        /*let Self { mut sentinel } = self;
-
-        loop {
-            sentinel.observe()?.map(Self::draw);
-            Self::sleep();
-        }*/
     }
 
-    #[allow(dead_code, reason = "TODO(kate): refactoring")]
-    fn draw(
-        Recording {
-            start: _,
-            end: _,
-            system,
-            cpus,
-        }: Recording,
-    ) -> io::Result<()> {
-        const BORDER: char = '│';
-
-        let meter_width = {
-            let columns = 150; // XXX(hardcoded for now)
-            let ncpus = cpus.len() - 1;
-            let delims = ncpus - 1;
-            let per_cpu = (columns - delims) / ncpus;
-            per_cpu
-        };
-
-        let stdout = std::io::stdout();
-        let mut stdout = stdout.lock();
-
-        write!(&mut stdout, "  ")?;
-
-        write!(&mut stdout, "\x1B[90m")?;
-        write!(&mut stdout, "{BORDER}")?;
-        write!(&mut stdout, "\x1B[0m")?;
-
-        for (_, measurement) in cpus {
-            // set the foreground color via `ESC[{..}m`.
-            // red: 31
-            // yellow: 33
-            // green: 32
-            // grey: 90
-            write!(&mut stdout, "\x1B[31m")?;
-
-            Meter {
-                value: measurement.active() / measurement.total(),
-                width: meter_width,
-            }
-            .draw(&mut stdout)?;
-
-            // reset the foreground color via `ESC[{..}m`.
-            write!(&mut stdout, "\x1B[0m")?;
-
-            write!(&mut stdout, "\x1B[90m")?;
-            write!(&mut stdout, "{BORDER}")?;
-            write!(&mut stdout, "\x1B[0m")?;
-        }
-        write!(&mut stdout, " ")?;
-
-        write!(&mut stdout, "\x1B[32m")?;
-        let percentage = system.percentage();
-        write!(&mut stdout, " {percentage:02}%")?;
-        write!(&mut stdout, "\x1B[0m")?;
-
-        write!(&mut stdout, "\n")?;
-
-        Ok(())
-    }
-
+    /// sleeps until another measurement should be taken.
     fn sleep() {
         const INTERVAL: Duration = Duration::from_secs(1);
         std::thread::sleep(INTERVAL);
