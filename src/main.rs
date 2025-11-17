@@ -3,7 +3,7 @@
 type Error = Box<dyn std::error::Error>;
 
 fn main() -> Result<(), Error> {
-    let app = tach::App::new();
+    let app = tach::App::new()?;
     app.run()?;
     unreachable!();
 }

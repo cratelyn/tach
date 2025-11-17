@@ -8,13 +8,17 @@ use std::{
 
 pub use self::{clock::*, stats::*};
 
+/// abstracts over time, via a [`Clock`] trait.
 mod clock {
     use super::*;
 
+    /// a clock.
     pub trait Clock {
+        /// returns the current time.
         fn now(&self) -> Instant;
     }
 
+    /// a [`Clock`] backed by the system timer.
     #[derive(Default)]
     pub struct SystemClock;
 

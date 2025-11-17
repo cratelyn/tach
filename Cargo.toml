@@ -8,3 +8,4 @@ description            = "a compact cpu monitor"
 
 [dependencies]
 crossterm = "0.29"
+num_cpus = "1.17.0"

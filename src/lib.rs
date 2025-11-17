@@ -1,12 +1,19 @@
 //! a compact cpu monitor.
 
 use {
-    self::sentinel::{Recording, Sentinel},
+    self::{
+        sentinel::{Recording, Sentinel},
+        window::{Height, Width},
+    },
+    crate::window::Size,
     std::{
         io::{self, Write},
         time::Duration,
     },
 };
+
+/// named constants for unicode characters.
+mod chars;
 
 /// a meter displaying cpu usage.
 mod meter;
@@ -20,7 +27,7 @@ mod source;
 /// kernel statistics facilities.
 ///
 /// this file provides tools to interact with `/proc/stat`.
-mod stat;
+pub mod stat;
 
 /// the tui window.
 mod window;
@@ -29,6 +36,10 @@ mod window;
 pub struct App {
     /// the sentinel, observing kernel statistics.
     sentinel: Sentinel,
+    /// the number of cpus.
+    num_cpus: usize,
+    /// the size of the window.
+    size: Size,
 }
 
 /// A boxed error.
@@ -38,10 +49,17 @@ type Error = Box<dyn std::error::Error>;
 
 impl App {
     /// initializes a new application.
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self, Error> {
+        let (cols, rows) = crossterm::terminal::size()?;
+        let width = Width(cols);
+        let height = Height(rows);
+        let size = Size { width, height };
+
+        Ok(Self {
             sentinel: Sentinel::new(),
-        }
+            num_cpus: num_cpus::get(),
+            size,
+        })
     }
 
     /// runs the application.
