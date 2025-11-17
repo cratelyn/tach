@@ -4,7 +4,6 @@ use {
     self::{
         meter::Meter,
         sentinel::{Recording, Sentinel},
-        stat::StatReadError,
     },
     std::{
         io::{self, Write},
@@ -26,9 +25,14 @@ mod source;
 /// this file provides tools to interact with `/proc/stat`.
 mod stat;
 
+/// the tui window.
+mod window;
+
 pub struct App {
     sentinel: Sentinel,
 }
+
+type Error = Box<dyn std::error::Error>;
 
 /// === impl App ===
 
@@ -41,15 +45,18 @@ impl App {
     }
 
     /// runs the application.
-    pub fn run(self) -> Result<(), StatReadError> {
-        let Self { mut sentinel } = self;
+    pub fn run(self) -> Result<(), Error> {
+        self.tui().map_err(Into::into)
+
+        /*let Self { mut sentinel } = self;
 
         loop {
             sentinel.observe()?.map(Self::draw);
             Self::sleep();
-        }
+        }*/
     }
 
+    #[allow(dead_code, reason = "TODO(kate): refactoring")]
     fn draw(
         Recording {
             start: _,

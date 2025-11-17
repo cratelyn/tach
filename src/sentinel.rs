@@ -38,6 +38,7 @@ pub struct Recording {
     #[allow(dead_code)]
     pub end: Instant,
     /// how the system cpus spent their time, in aggregate.
+    #[allow(dead_code)]
     pub system: Measurement,
     /// how each cpu spent its time.
     pub cpus: BTreeMap<CpuId, Measurement>,

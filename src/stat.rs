@@ -163,7 +163,7 @@ impl FromStr for Entry {
 }
 
 impl Entry {
-    fn parse_entry_kind(kind: &str) -> Either {
+    fn parse_entry_kind(kind: &str) -> Either<'_> {
         use Entry::*;
 
         match kind {
@@ -200,6 +200,14 @@ impl Entry {
             .map(CpuId)
             .map(Some)
             .map_err(CpuIdParse)
+    }
+}
+
+// === impl CpuId ===
+
+impl CpuId {
+    pub fn as_u16(&self) -> u16 {
+        self.0 as u16
     }
 }
 

@@ -1,12 +1,9 @@
-use {
-    super::*,
-    std::{
-        cell::RefCell,
-        collections::VecDeque,
-        fs::File,
-        io::{self, BufReader, Cursor, Read},
-        time::Instant,
-    },
+use std::{
+    cell::RefCell,
+    collections::VecDeque,
+    fs::File,
+    io::{self, BufReader, Cursor, Read},
+    time::Instant,
 };
 
 pub use self::{clock::*, stats::*};
@@ -29,6 +26,7 @@ mod clock {
 
     /// a mock stat source.
     #[derive(Default)]
+    #[allow(dead_code, reason = "this is a testing utility.")]
     pub struct MockStatClock {
         times: RefCell<VecDeque<Instant>>,
     }
@@ -60,6 +58,8 @@ mod stats {
     pub struct ProcStatFile;
 
     /// a mock stat source.
+    #[derive(Default)]
+    #[allow(dead_code, reason = "this is a testing utility.")]
     pub struct MockStatFile {
         stats: RefCell<VecDeque<String>>,
     }

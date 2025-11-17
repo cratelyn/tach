@@ -7,3 +7,4 @@ authors                = ["katelyn martin <git@katelyn.world>"]
 description            = "a compact cpu monitor"
 
 [dependencies]
+crossterm = "0.29"

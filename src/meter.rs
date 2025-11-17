@@ -1,3 +1,5 @@
+#![allow(dead_code, reason = "TODO(kate): refactoring display")]
+
 use std::{
     fmt::Display,
     io::{self, Write},
@@ -123,15 +125,15 @@ impl Cell {
     fn as_char(&self) -> char {
         use {Cell::*, chars::*};
         match self {
-            Zero => ZERO,
-            One => ONE,
-            Two => TWO,
-            Three => THREE,
-            Four => FOUR,
-            Five => FIVE,
-            Six => SIX,
-            Seven => SEVEN,
-            Eight => EIGHT,
+            Zero => placeholder::ZERO,
+            One => placeholder::ONE,
+            Two => placeholder::TWO,
+            Three => placeholder::THREE,
+            Four => placeholder::FOUR,
+            Five => placeholder::FIVE,
+            Six => placeholder::SIX,
+            Seven => placeholder::SEVEN,
+            Eight => placeholder::EIGHT,
         }
     }
 }
@@ -141,19 +143,21 @@ impl Cell {
 /// [unicode]: https://www.unicode.org/charts/PDF/U2800.pdf
 #[rustfmt::skip]
 mod chars {
-    pub(super) const ZERO: char = '\u{2800}';  // `⠀`
-    pub(super) const ONE: char = '\u{2840}';   // `⡀`
-    pub(super) const TWO: char = '\u{28C0}';   // `⣀`
-    pub(super) const THREE: char = '\u{28C4}'; // `⣄`
-    pub(super) const FOUR: char = '\u{28E4}';  // `⣤`
-    pub(super) const FIVE: char = '\u{28E6}';  // `⣦`
-    pub(super) const SIX: char = '\u{28F6}';   // `⣶`
-    pub(super) const SEVEN: char = '\u{28F7}'; // `⣷`
-    pub(super) const EIGHT: char = '\u{28FF}'; // `⣿`
+    pub mod placeholder {
+        pub const ZERO: char = '\u{2800}';  // `⠀`
+        pub const ONE: char = '\u{2840}';   // `⡀`
+        pub const TWO: char = '\u{28C0}';   // `⣀`
+        pub const THREE: char = '\u{28C4}'; // `⣄`
+        pub const FOUR: char = '\u{28E4}';  // `⣤`
+        pub const FIVE: char = '\u{28E6}';  // `⣦`
+        pub const SIX: char = '\u{28F6}';   // `⣶`
+        pub const SEVEN: char = '\u{28F7}'; // `⣷`
+        pub const EIGHT: char = '\u{28FF}'; // `⣿`
+    }
 }
 
 #[cfg(test)]
-mod tests {
+mod placeholder_tests {
     use super::*;
 
     #[test]
